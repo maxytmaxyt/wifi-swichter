@@ -33,7 +33,7 @@ internal class WifiNetworkMonitor(
             networkSettings.ssid5Ghz -> networkSettings.ssid24Ghz
             else -> {
                 return NetworkEvaluation(
-                    "Aktuelles WLAN „$currentSsid" stimmt mit keinem der eingestellten " +
+                    "Aktuelles WLAN \"$currentSsid\" stimmt mit keinem der eingestellten " +
                         "WLAN-Namen überein. Prüfe die SSID-Einstellungen und Standortfreigabe."
                 )
             }
