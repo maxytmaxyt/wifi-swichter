@@ -1,0 +1,142 @@
+From cc4d1b2802af538732bf520d16b4180403e0c878 Mon Sep 17 00:00:00 2001
+From: Max <163127355+maxytmaxyt@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 19:34:12 +0000
+Subject: [PATCH] fix: Korrekturen in Scan-Zeitstempel, Shell-Sentinel,
+ SSID-Abfrage und CI-Workflow
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- WifiNetworkMonitor: MAX_SCAN_AGE_MICROS → MAX_SCAN_AGE_NANOS; ScanResult.timestamp
+  wird vor dem Vergleich mit elapsedRealtimeNanos() korrekt von Mikro- in Nanosekunden
+  umgerechnet (it.timestamp * 1_000L statt des bisherigen Vergleichs in gemischten Einheiten)
+- WifiMonitorService: waitForNetworkSwitch nutzt networkMonitor.currentSsid() statt
+  des deprecated WifiManager.connectionInfo.ssid
+- RootWifiController: DUMP_SENTINEL in der Shell mit einfachen Anführungszeichen gequotet,
+  damit der Wert literal ausgegeben wird und nicht als leere Shell-Variable expandiert
+- build.yml: 'gradle assembleDebug' → './gradlew assembleDebug'; gradle-version-Pin
+  entfernt, da der Wrapper die Version bereits vorgibt
+---
+ .github/workflows/build.yml                   |  4 +---
+ .../service/WifiMonitorService.kt             |  2 +-
+ .../wifi/RootWifiController.kt                |  2 +-
+ .../wifi/WifiNetworkMonitor.kt                | 20 ++++++++++++++++---
+ 4 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 4de66bb..a53ff00 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -15,11 +15,9 @@ jobs:
+ 
+       - name: Setup Gradle
+         uses: gradle/actions/setup-gradle@v3
+-        with:
+-          gradle-version: '8.2.1'
+ 
+       - name: Build with Gradle
+-        run: gradle assembleDebug
++        run: ./gradlew assembleDebug
+ 
+       - name: Upload APK
+         uses: actions/upload-artifact@v4
+diff --git a/app/src/main/java/com/example/rootwifiswitcher/service/WifiMonitorService.kt b/app/src/main/java/com/example/rootwifiswitcher/service/WifiMonitorService.kt
+index 1fe68c9..033bb78 100644
+--- a/app/src/main/java/com/example/rootwifiswitcher/service/WifiMonitorService.kt
++++ b/app/src/main/java/com/example/rootwifiswitcher/service/WifiMonitorService.kt
+@@ -257,7 +257,7 @@ class WifiMonitorService : Service() {
+     private fun waitForNetworkSwitch(targetSsid: String) {
+         val deadline = SystemClock.elapsedRealtime() + NETWORK_SWITCH_TIMEOUT_MILLIS
+         while (SystemClock.elapsedRealtime() < deadline) {
+-            if (wifiManager.connectionInfo.ssid.removeSurrounding("\"") == targetSsid) {
++            if (networkMonitor.currentSsid() == targetSsid) {
+                 return
+             }
+             try {
+diff --git a/app/src/main/java/com/example/rootwifiswitcher/wifi/RootWifiController.kt b/app/src/main/java/com/example/rootwifiswitcher/wifi/RootWifiController.kt
+index e287c54..c96744d 100644
+--- a/app/src/main/java/com/example/rootwifiswitcher/wifi/RootWifiController.kt
++++ b/app/src/main/java/com/example/rootwifiswitcher/wifi/RootWifiController.kt
+@@ -20,7 +20,7 @@ internal class RootWifiController {
+         val result = executeShell(
+             "dumpsys wifi | grep -iE " +
+                 "'Dump of SoftApManager|Dump of ClientModeManager|current StateMachine mode:'; " +
+-                "echo $DUMP_SENTINEL"
++                "echo '$DUMP_SENTINEL'"
+         )
+         if (!result.succeeded) {
+             return HotspotState.UNKNOWN
+diff --git a/app/src/main/java/com/example/rootwifiswitcher/wifi/WifiNetworkMonitor.kt b/app/src/main/java/com/example/rootwifiswitcher/wifi/WifiNetworkMonitor.kt
+index 2cbc5d0..5e7158c 100644
+--- a/app/src/main/java/com/example/rootwifiswitcher/wifi/WifiNetworkMonitor.kt
++++ b/app/src/main/java/com/example/rootwifiswitcher/wifi/WifiNetworkMonitor.kt
+@@ -15,12 +15,17 @@ internal class WifiNetworkMonitor(
+     private val wifiManager: WifiManager,
+     private val networkSettings: WifiNetworkSettings
+ ) {
++    @Suppress("DEPRECATION")
+     fun requestScan(): Boolean = wifiManager.startScan()
+ 
+     fun evaluate(): NetworkEvaluation {
+         val nowNanos = SystemClock.elapsedRealtimeNanos()
++        // ScanResult.timestamp is microseconds since last boot; multiply by 1_000 to convert to
++        // nanoseconds before comparing with elapsedRealtimeNanos().
+         val scans = wifiManager.scanResults
+-            .filter { nowNanos - it.timestamp <= MAX_SCAN_AGE_MICROS * 1_000L }
++            .filter { nowNanos - it.timestamp * 1_000L <= MAX_SCAN_AGE_NANOS }
++
++        @Suppress("DEPRECATION")
+         val current = wifiManager.connectionInfo
+         val currentSsid = current.ssid.removeSurrounding("\"")
+         val targetSsid = when (currentSsid) {
+@@ -28,7 +33,7 @@ internal class WifiNetworkMonitor(
+             networkSettings.ssid5Ghz -> networkSettings.ssid24Ghz
+             else -> {
+                 return NetworkEvaluation(
+-                    "Aktuelles WLAN „$currentSsid“ stimmt mit keinem der eingestellten " +
++                    "Aktuelles WLAN „$currentSsid" stimmt mit keinem der eingestellten " +
+                         "WLAN-Namen überein. Prüfe die SSID-Einstellungen und Standortfreigabe."
+                 )
+             }
+@@ -41,6 +46,7 @@ internal class WifiNetworkMonitor(
+             )
+ 
+         val currentRssi = current.rssi
++        @Suppress("DEPRECATION")
+         val currentRate = current.linkSpeed
+         val targetRate = estimateSingleStreamRate(target)
+         val hasWeakSignal = currentRssi <= WEAK_SIGNAL_THRESHOLD_DBM
+@@ -59,6 +65,11 @@ internal class WifiNetworkMonitor(
+         )
+     }
+ 
++    /** Returns the SSID of the currently connected network, or null if not connected. */
++    @Suppress("DEPRECATION")
++    fun currentSsid(): String? =
++        wifiManager.connectionInfo?.ssid?.removeSurrounding("\"")
++
+     private fun normalizeSsid(ssid: String): String = ssid.removeSurrounding("\"")
+ 
+     private fun missingTargetStatus(targetSsid: String, visibleSsids: List<String>): String {
+@@ -80,6 +91,7 @@ internal class WifiNetworkMonitor(
+             ScanResult.CHANNEL_WIDTH_40MHZ -> 1
+             ScanResult.CHANNEL_WIDTH_80MHZ -> 2
+             ScanResult.CHANNEL_WIDTH_160MHZ,
++            @Suppress("DEPRECATION")
+             ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ -> 3
+             else -> 0
+         }
+@@ -99,7 +111,9 @@ internal class WifiNetworkMonitor(
+     }
+ 
+     companion object {
+-        private const val MAX_SCAN_AGE_MICROS = 120_000_000L
++        // 120 seconds expressed in nanoseconds for comparison with elapsedRealtimeNanos()
++        // (ScanResult.timestamp is in microseconds and is converted before the comparison)
++        private const val MAX_SCAN_AGE_NANOS = 120_000_000_000L
+         private const val WEAK_SIGNAL_THRESHOLD_DBM = -72
+         private const val SIGNAL_ADVANTAGE_DB = 8
+         private const val MINIMUM_USABLE_TARGET_DBM = -80
+-- 
+2.43.0
+
