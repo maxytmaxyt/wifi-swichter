@@ -7,7 +7,7 @@ android {
     compileSdk = 34
     defaultConfig {
         applicationId = "com.example.rootwifiswitcher"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"

@@ -1,10 +1,79 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://github.com"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="16dp">
-    <TextView android:id="@+id/txtStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Bereit" android:textSize="18sp" android:layout_marginBottom="24dp"/>
-    <Button android:id="@+id/btnSwitch" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Verbindung erzwingen" />
-</LinearLayout>
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:gravity="center"
+            android:text="Bereit"
+            android:textSize="18sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="FRITZ!Box-WLANs" />
+
+        <EditText
+            android:id="@+id/editWifiPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints="password"
+            android:hint="Gemeinsames WPA2-Passwort"
+            android:inputType="textPassword"
+            android:maxLines="1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Hotspot-Wiederherstellung (optional)" />
+
+        <EditText
+            android:id="@+id/editHotspotSsid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Hotspot-SSID"
+            android:inputType="text"
+            android:maxLines="1" />
+
+        <EditText
+            android:id="@+id/editHotspotPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints="password"
+            android:hint="Hotspot-WPA2-Passwort"
+            android:inputType="textPassword"
+            android:maxLines="1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="SSID und WPA2-Passwort werden verschlüsselt gespeichert und zum Neustart verwendet. Ohne Hotspot-Daten wird ein aktiver Hotspot-Wechsel übersprungen." />
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Überwachung starten" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Überwachung stoppen" />
+    </LinearLayout>
+</ScrollView>
