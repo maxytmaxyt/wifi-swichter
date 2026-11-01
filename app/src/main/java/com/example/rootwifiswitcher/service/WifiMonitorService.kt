@@ -19,6 +19,7 @@ import com.example.rootwifiswitcher.security.HotspotCredentials
 import com.example.rootwifiswitcher.wifi.HotspotState
 import com.example.rootwifiswitcher.wifi.RootWifiController
 import com.example.rootwifiswitcher.wifi.WifiNetworkMonitor
+import com.example.rootwifiswitcher.wifi.WifiNetworkSettingsStore
 import java.security.GeneralSecurityException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -31,6 +32,7 @@ class WifiMonitorService : Service() {
     private lateinit var networkMonitor: WifiNetworkMonitor
     private var wifiPassword: String? = null
     private var hotspotCredentials: HotspotCredentials? = null
+    private var hotspotCredentialsLoadError: String? = null
     private var lastSwitchAttempt = 0L
     private var monitoringStarted = false
 
@@ -39,14 +41,23 @@ class WifiMonitorService : Service() {
 
     private val scanReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            monitorExecutor.execute { evaluateNetworks() }
+            val resultsUpdated = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
+            monitorExecutor.execute {
+                if (resultsUpdated) {
+                    evaluateNetworks()
+                } else {
+                    updateStatus(
+                        "Android hat keine neuen WLAN-Scans geliefert (z. B. wegen Scan-Drosselung). " +
+                            "Die App wartet auf aktuelle Ergebnisse."
+                    )
+                }
+            }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        networkMonitor = WifiNetworkMonitor(wifiManager)
 
         val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -82,16 +93,26 @@ class WifiMonitorService : Service() {
             return stopAfterStartupError(startId, "Bitte zuerst das FRITZ!Box-Passwort eingeben.")
         }
 
+        networkMonitor = WifiNetworkMonitor(
+            wifiManager,
+            WifiNetworkSettingsStore.load(this)
+        )
         hotspotCredentials = try {
             CredentialStore.loadHotspotCredentials(this)
         } catch (exception: GeneralSecurityException) {
+            hotspotCredentialsLoadError =
+                "Gespeicherte Hotspot-Daten können nicht entschlüsselt werden."
             null
         } catch (exception: IllegalArgumentException) {
+            hotspotCredentialsLoadError = exception.message
             null
         }
 
         if (!monitoringStarted) {
             monitoringStarted = true
+            updateStatus(
+                "Überwachung aktiv. Warte auf einen neuen WLAN-Scan; Android kann Scans begrenzen."
+            )
             monitorExecutor.scheduleWithFixedDelay(
                 { requestScan() },
                 0,
@@ -99,7 +120,6 @@ class WifiMonitorService : Service() {
                 TimeUnit.SECONDS
             )
         }
-        updateStatus("Überwachung aktiv. Suche nach den beiden FRITZ!Box-Netzen.")
         return START_STICKY
     }
 
@@ -126,7 +146,10 @@ class WifiMonitorService : Service() {
                 return
             }
             if (!networkMonitor.requestScan()) {
-                evaluateNetworks()
+                updateStatus(
+                    "Android hat den WLAN-Scan nicht gestartet (möglicherweise gedrosselt). " +
+                        "Die App wartet auf neue Scanergebnisse."
+                )
             }
         } catch (exception: SecurityException) {
             updateStatus("Standortberechtigung fehlt oder wurde entzogen.")
@@ -177,8 +200,9 @@ class WifiMonitorService : Service() {
             val savedHotspotCredentials = hotspotCredentials
             if (hotspotWasEnabled && savedHotspotCredentials == null) {
                 updateStatus(
-                    "Hotspot ist aktiv. Hinterlege zuerst seine SSID und sein Passwort, " +
-                        "damit er nach dem WLAN-Wechsel wiederhergestellt werden kann."
+                    hotspotCredentialsLoadError
+                        ?: "Hotspot ist aktiv. Hinterlege zuerst seine SSID und sein Passwort, " +
+                            "damit er nach dem WLAN-Wechsel wiederhergestellt werden kann."
                 )
                 return
             }

@@ -19,10 +19,15 @@ import androidx.core.content.ContextCompat
 import com.example.rootwifiswitcher.R
 import com.example.rootwifiswitcher.security.CredentialStore
 import com.example.rootwifiswitcher.service.WifiMonitorService
+import com.example.rootwifiswitcher.wifi.WifiNetworkSettings
+import com.example.rootwifiswitcher.wifi.WifiNetworkSettingsStore
 import java.security.GeneralSecurityException
 
 class MainActivity : AppCompatActivity() {
     private lateinit var statusView: TextView
+    private lateinit var savedStateView: TextView
+    private lateinit var ssid24GhzInput: EditText
+    private lateinit var ssid5GhzInput: EditText
     private lateinit var wifiPasswordInput: EditText
     private lateinit var hotspotSsidInput: EditText
     private lateinit var hotspotPasswordInput: EditText
@@ -49,9 +54,17 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         statusView = findViewById(R.id.txtStatus)
+        savedStateView = findViewById(R.id.txtSavedState)
+        ssid24GhzInput = findViewById(R.id.editSsid24Ghz)
+        ssid5GhzInput = findViewById(R.id.editSsid5Ghz)
         wifiPasswordInput = findViewById(R.id.editWifiPassword)
         hotspotSsidInput = findViewById(R.id.editHotspotSsid)
         hotspotPasswordInput = findViewById(R.id.editHotspotPassword)
+
+        val networkSettings = WifiNetworkSettingsStore.load(this)
+        ssid24GhzInput.setText(networkSettings.ssid24Ghz)
+        ssid5GhzInput.setText(networkSettings.ssid5Ghz)
+        refreshSavedState()
 
         findViewById<Button>(R.id.btnStart).setOnClickListener {
             if (hasRequiredPermissions()) {
@@ -87,6 +100,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val wifiPassword = wifiPasswordInput.text.toString()
+        val ssid24Ghz = ssid24GhzInput.text.toString()
+        val ssid5Ghz = ssid5GhzInput.text.toString()
         val hotspotSsid = hotspotSsidInput.text.toString().trim()
         val hotspotPassword = hotspotPasswordInput.text.toString()
         if (hotspotSsid.isEmpty() != hotspotPassword.isEmpty()) {
@@ -105,6 +120,10 @@ class MainActivity : AppCompatActivity() {
             if (hotspotSsid.isNotEmpty()) {
                 CredentialStore.saveHotspotCredentials(this, hotspotSsid, hotspotPassword)
             }
+            WifiNetworkSettingsStore.save(
+                this,
+                WifiNetworkSettings(ssid24Ghz, ssid5Ghz)
+            )
         } catch (exception: GeneralSecurityException) {
             showCredentialError("Zugangsdaten konnten nicht sicher gespeichert werden.")
             return
@@ -117,8 +136,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         wifiPasswordInput.text.clear()
-        hotspotSsidInput.text.clear()
         hotspotPasswordInput.text.clear()
+        refreshSavedState()
+        statusView.text = "WLAN-Namen und Zugangsdaten wurden gespeichert."
 
         val serviceIntent = Intent(this, WifiMonitorService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -126,7 +146,36 @@ class MainActivity : AppCompatActivity() {
         } else {
             startService(serviceIntent)
         }
-        statusView.text = "WLAN-Überwachung wird gestartet."
+        statusView.text = "Gespeichert. WLAN-Überwachung wird gestartet."
+    }
+
+    private fun refreshSavedState() {
+        val wifiState = if (CredentialStore.hasWifiPassword(this)) {
+            "FRITZ!Box-Passwort gespeichert"
+        } else {
+            "FRITZ!Box-Passwort fehlt"
+        }
+        val hotspotState = if (CredentialStore.hasHotspotCredentials(this)) {
+            "Hotspot-Daten gespeichert"
+        } else {
+            "Hotspot-Daten fehlen"
+        }
+        savedStateView.text = "WLAN-Namen gespeichert · $wifiState · $hotspotState"
+        wifiPasswordInput.hint = if (CredentialStore.hasWifiPassword(this)) {
+            "WPA2-Passwort (gespeichert; leer lassen zum Beibehalten)"
+        } else {
+            "Gemeinsames WPA2-Passwort"
+        }
+        hotspotPasswordInput.hint = if (CredentialStore.hasHotspotCredentials(this)) {
+            "Hotspot-Passwort (gespeichert; leer lassen zum Beibehalten)"
+        } else {
+            "Hotspot-WPA2-Passwort"
+        }
+        hotspotSsidInput.hint = if (CredentialStore.hasHotspotCredentials(this)) {
+            "Hotspot-SSID (gespeichert; leer lassen zum Beibehalten)"
+        } else {
+            "Hotspot-SSID"
+        }
     }
 
     private fun showCredentialError(message: String) {

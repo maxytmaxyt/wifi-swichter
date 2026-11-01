@@ -23,8 +23,12 @@ object CredentialStore {
     private const val IV_LENGTH = 12
 
     fun saveWifiPassword(context: Context, password: String) {
-        require(password.toByteArray(StandardCharsets.UTF_8).size in WPA2_PASSWORD_MIN_BYTES..WPA2_PASSWORD_MAX_BYTES) {
-            "Das WPA2-Passwort muss zwischen 8 und 63 Bytes lang sein."
+        val byteLength = password.toByteArray(StandardCharsets.UTF_8).size
+        val isRawPsk = password.length == RAW_PSK_LENGTH && password.all {
+            it in '0'..'9' || it.lowercaseChar() in 'a'..'f'
+        }
+        require(byteLength in WPA2_PASSWORD_MIN_BYTES..WPA2_PASSWORD_MAX_BYTES || isRawPsk) {
+            "Das WPA2-Passwort muss 8 bis 63 Bytes oder ein 64-stelliger hexadezimaler Schlüssel sein."
         }
         saveEncrypted(context, WIFI_PASSWORD_KEY, password)
     }
@@ -32,7 +36,11 @@ object CredentialStore {
     fun loadWifiPassword(context: Context): String? =
         loadEncrypted(context, WIFI_PASSWORD_KEY)
 
+    fun hasWifiPassword(context: Context): Boolean =
+        preferences(context).contains(WIFI_PASSWORD_KEY)
+
     fun saveHotspotCredentials(context: Context, ssid: String, password: String) {
+        require(ssid.isNotBlank()) { "Die Hotspot-SSID darf nicht leer sein." }
         require(ssid.toByteArray(StandardCharsets.UTF_8).size in 1..MAX_SSID_BYTES) {
             "Die Hotspot-SSID darf höchstens 32 Bytes lang und nicht leer sein."
         }
@@ -44,10 +52,27 @@ object CredentialStore {
     }
 
     fun loadHotspotCredentials(context: Context): HotspotCredentials? {
-        val ssid = loadEncrypted(context, HOTSPOT_SSID_KEY) ?: return null
-        val password = loadEncrypted(context, HOTSPOT_PASSWORD_KEY) ?: return null
+        val preferences = preferences(context)
+        val hasSsid = preferences.contains(HOTSPOT_SSID_KEY)
+        val hasPassword = preferences.contains(HOTSPOT_PASSWORD_KEY)
+        if (!hasSsid && !hasPassword) {
+            return null
+        }
+        require(hasSsid && hasPassword) {
+            "Gespeicherte Hotspot-Zugangsdaten sind unvollständig."
+        }
+        val ssid = loadEncrypted(context, HOTSPOT_SSID_KEY)
+            ?: error("Gespeicherte Hotspot-SSID fehlt.")
+        val password = loadEncrypted(context, HOTSPOT_PASSWORD_KEY)
+            ?: error("Gespeichertes Hotspot-Passwort fehlt.")
         require(ssid.isNotBlank()) { "Die gespeicherte Hotspot-SSID ist ungültig." }
         return HotspotCredentials(ssid, password)
+    }
+
+    fun hasHotspotCredentials(context: Context): Boolean {
+        val preferences = preferences(context)
+        return preferences.contains(HOTSPOT_SSID_KEY) &&
+            preferences.contains(HOTSPOT_PASSWORD_KEY)
     }
 
     private fun saveEncrypted(context: Context, preferenceKey: String, value: String) {
@@ -100,5 +125,6 @@ object CredentialStore {
 
     private const val WPA2_PASSWORD_MIN_BYTES = 8
     private const val WPA2_PASSWORD_MAX_BYTES = 63
+    private const val RAW_PSK_LENGTH = 64
     private const val MAX_SSID_BYTES = 32
 }

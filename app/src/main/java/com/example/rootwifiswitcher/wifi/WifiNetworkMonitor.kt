@@ -11,7 +11,10 @@ internal data class NetworkEvaluation(
     val shouldSwitch: Boolean = false
 )
 
-internal class WifiNetworkMonitor(private val wifiManager: WifiManager) {
+internal class WifiNetworkMonitor(
+    private val wifiManager: WifiManager,
+    private val networkSettings: WifiNetworkSettings
+) {
     fun requestScan(): Boolean = wifiManager.startScan()
 
     fun evaluate(): NetworkEvaluation {
@@ -21,18 +24,21 @@ internal class WifiNetworkMonitor(private val wifiManager: WifiManager) {
         val current = wifiManager.connectionInfo
         val currentSsid = current.ssid.removeSurrounding("\"")
         val targetSsid = when (currentSsid) {
-            SSID_24_GHZ -> SSID_5_GHZ
-            SSID_5_GHZ -> SSID_24_GHZ
+            networkSettings.ssid24Ghz -> networkSettings.ssid5Ghz
+            networkSettings.ssid5Ghz -> networkSettings.ssid24Ghz
             else -> {
                 return NetworkEvaluation(
-                    "Aktuelles WLAN nicht erkannt. Prüfe Standortfreigabe und SSID."
+                    "Aktuelles WLAN „$currentSsid“ stimmt mit keinem der eingestellten " +
+                        "WLAN-Namen überein. Prüfe die SSID-Einstellungen und Standortfreigabe."
                 )
             }
         }
         val target = scans
-            .filter { it.SSID == targetSsid }
+            .filter { normalizeSsid(it.SSID) == targetSsid }
             .maxByOrNull { it.level }
-            ?: return NetworkEvaluation("Zielnetz \"$targetSsid\" ist aktuell nicht sichtbar.")
+            ?: return NetworkEvaluation(
+                missingTargetStatus(targetSsid, scans.map { normalizeSsid(it.SSID) })
+            )
 
         val currentRssi = current.rssi
         val currentRate = current.linkSpeed
@@ -51,6 +57,22 @@ internal class WifiNetworkMonitor(private val wifiManager: WifiManager) {
             targetSsid = targetSsid,
             shouldSwitch = hasWeakSignal && isSignificantlyBetter
         )
+    }
+
+    private fun normalizeSsid(ssid: String): String = ssid.removeSurrounding("\"")
+
+    private fun missingTargetStatus(targetSsid: String, visibleSsids: List<String>): String {
+        val visibleNetworks = visibleSsids
+            .filter(String::isNotBlank)
+            .distinct()
+            .take(MAX_VISIBLE_NETWORKS)
+        val visibleSummary = when {
+            visibleNetworks.isNotEmpty() -> " Sichtbare WLAN-Namen: ${visibleNetworks.joinToString()}."
+            visibleSsids.isNotEmpty() -> " Es wurden nur WLANs mit verborgener SSID gefunden."
+            else -> " Es liegen keine aktuellen Scanergebnisse vor."
+        }
+        return "Zielnetz \"$targetSsid\" ist in den aktuellen Scanergebnissen nicht enthalten." +
+            visibleSummary
     }
 
     private fun estimateSingleStreamRate(scan: ScanResult): Int {
@@ -82,7 +104,6 @@ internal class WifiNetworkMonitor(private val wifiManager: WifiManager) {
         private const val SIGNAL_ADVANTAGE_DB = 8
         private const val MINIMUM_USABLE_TARGET_DBM = -80
         private const val RATE_ADVANTAGE_FACTOR = 1.25
-        private const val SSID_24_GHZ = "FRITZ!Box 5590 WD 2,4"
-        private const val SSID_5_GHZ = "FRITZ!Box 5590 WD"
+        private const val MAX_VISIBLE_NETWORKS = 6
     }
 }
