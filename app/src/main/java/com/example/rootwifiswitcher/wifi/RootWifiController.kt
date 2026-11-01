@@ -20,7 +20,7 @@ internal class RootWifiController {
         val result = executeShell(
             "dumpsys wifi | grep -iE " +
                 "'Dump of SoftApManager|Dump of ClientModeManager|current StateMachine mode:'; " +
-                "echo $DUMP_SENTINEL"
+                "echo '$DUMP_SENTINEL'"
         )
         if (!result.succeeded) {
             return HotspotState.UNKNOWN

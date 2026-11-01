@@ -257,7 +257,7 @@ class WifiMonitorService : Service() {
     private fun waitForNetworkSwitch(targetSsid: String) {
         val deadline = SystemClock.elapsedRealtime() + NETWORK_SWITCH_TIMEOUT_MILLIS
         while (SystemClock.elapsedRealtime() < deadline) {
-            if (wifiManager.connectionInfo.ssid.removeSurrounding("\"") == targetSsid) {
+            if (networkMonitor.currentSsid() == targetSsid) {
                 return
             }
             try {

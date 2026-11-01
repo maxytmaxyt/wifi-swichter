@@ -15,12 +15,17 @@ internal class WifiNetworkMonitor(
     private val wifiManager: WifiManager,
     private val networkSettings: WifiNetworkSettings
 ) {
+    @Suppress("DEPRECATION")
     fun requestScan(): Boolean = wifiManager.startScan()
 
     fun evaluate(): NetworkEvaluation {
         val nowNanos = SystemClock.elapsedRealtimeNanos()
+        // ScanResult.timestamp is microseconds since last boot; multiply by 1_000 to convert to
+        // nanoseconds before comparing with elapsedRealtimeNanos().
         val scans = wifiManager.scanResults
-            .filter { nowNanos - it.timestamp <= MAX_SCAN_AGE_MICROS * 1_000L }
+            .filter { nowNanos - it.timestamp * 1_000L <= MAX_SCAN_AGE_NANOS }
+
+        @Suppress("DEPRECATION")
         val current = wifiManager.connectionInfo
         val currentSsid = current.ssid.removeSurrounding("\"")
         val targetSsid = when (currentSsid) {
@@ -28,7 +33,7 @@ internal class WifiNetworkMonitor(
             networkSettings.ssid5Ghz -> networkSettings.ssid24Ghz
             else -> {
                 return NetworkEvaluation(
-                    "Aktuelles WLAN „$currentSsid“ stimmt mit keinem der eingestellten " +
+                    "Aktuelles WLAN „$currentSsid" stimmt mit keinem der eingestellten " +
                         "WLAN-Namen überein. Prüfe die SSID-Einstellungen und Standortfreigabe."
                 )
             }
@@ -41,6 +46,7 @@ internal class WifiNetworkMonitor(
             )
 
         val currentRssi = current.rssi
+        @Suppress("DEPRECATION")
         val currentRate = current.linkSpeed
         val targetRate = estimateSingleStreamRate(target)
         val hasWeakSignal = currentRssi <= WEAK_SIGNAL_THRESHOLD_DBM
@@ -58,6 +64,11 @@ internal class WifiNetworkMonitor(
             shouldSwitch = hasWeakSignal && isSignificantlyBetter
         )
     }
+
+    /** Returns the SSID of the currently connected network, or null if not connected. */
+    @Suppress("DEPRECATION")
+    fun currentSsid(): String? =
+        wifiManager.connectionInfo?.ssid?.removeSurrounding("\"")
 
     private fun normalizeSsid(ssid: String): String = ssid.removeSurrounding("\"")
 
@@ -80,6 +91,7 @@ internal class WifiNetworkMonitor(
             ScanResult.CHANNEL_WIDTH_40MHZ -> 1
             ScanResult.CHANNEL_WIDTH_80MHZ -> 2
             ScanResult.CHANNEL_WIDTH_160MHZ,
+            @Suppress("DEPRECATION")
             ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ -> 3
             else -> 0
         }
@@ -99,7 +111,9 @@ internal class WifiNetworkMonitor(
     }
 
     companion object {
-        private const val MAX_SCAN_AGE_MICROS = 120_000_000L
+        // 120 seconds expressed in nanoseconds for comparison with elapsedRealtimeNanos()
+        // (ScanResult.timestamp is in microseconds and is converted before the comparison)
+        private const val MAX_SCAN_AGE_NANOS = 120_000_000_000L
         private const val WEAK_SIGNAL_THRESHOLD_DBM = -72
         private const val SIGNAL_ADVANTAGE_DB = 8
         private const val MINIMUM_USABLE_TARGET_DBM = -80
